@@ -383,7 +383,7 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
 
 #if CONFIG_BT_HID_DEVICE_ENABLED
 static local_param_t s_bt_hid_param = {0};
-const unsigned char mouseReportMap[] = {
+const unsigned char joystickReportMap[] = {
     0x05, 0x01,    // UsagePage(Generic Desktop[0x0001])
     0x09, 0x05,    // UsageId(Gamepad[0x0005])
     0xA1, 0x01,    // Collection(Application)
@@ -413,8 +413,8 @@ const unsigned char mouseReportMap[] = {
 
 static esp_hid_raw_report_map_t bt_report_maps[] = {
     {
-        .data = mouseReportMap,
-        .len = sizeof(mouseReportMap)
+        .data = joystickReportMap,
+        .len = sizeof(joystickReportMap)
     },
 };
 
@@ -430,7 +430,7 @@ static esp_hid_device_config_t bt_hid_config = {
 };
 
 // send the buttons, change in x, and change in y
-void send_mouse(uint8_t buttons, char dx, char dy, char wheel)
+void send_joystick(uint8_t buttons, char dx, char dy, char wheel)
 {
     static uint8_t buffer[4] = {0};
     buffer[0] = buttons;
@@ -443,8 +443,8 @@ void send_mouse(uint8_t buttons, char dx, char dy, char wheel)
 void bt_hid_demo_task(void *pvParameters)
 {
     static const char* help_string = "########################################################################\n"\
-    "BT hid mouse demo usage:\n"\
-    "You can input these value to simulate mouse: 'q', 'w', 'e', 'a', 's', 'd', 'h'\n"\
+    "BT hid joystick demo usage:\n"\
+    "You can input these value to simulate joystick: 'q', 'w', 'e', 'a', 's', 'd', 'h'\n"\
     "q -- click the left key\n"\
     "w -- move up\n"\
     "e -- click the right key\n"\
@@ -459,22 +459,22 @@ void bt_hid_demo_task(void *pvParameters)
         c = fgetc(stdin);
         switch (c) {
         case 'q':
-            send_mouse(1, 0, 0, 0);
+            send_joystick(1, 0, 0, 0);
             break;
         case 'w':
-            send_mouse(0, 0, -10, 0);
+            send_joystick(0, 0, -10, 0);
             break;
         case 'e':
-            send_mouse(2, 0, 0, 0);
+            send_joystick(2, 0, 0, 0);
             break;
         case 'a':
-            send_mouse(0, -10, 0, 0);
+            send_joystick(0, -10, 0, 0);
             break;
         case 's':
-            send_mouse(0, 0, 10, 0);
+            send_joystick(0, 0, 10, 0);
             break;
         case 'd':
-            send_mouse(0, 10, 0, 0);
+            send_joystick(0, 10, 0, 0);
             break;
         case 'h':
             printf("%s\n", help_string);
