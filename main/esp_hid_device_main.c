@@ -384,37 +384,31 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
 #if CONFIG_BT_HID_DEVICE_ENABLED
 static local_param_t s_bt_hid_param = {0};
 const unsigned char mouseReportMap[] = {
-    0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
-    0x09, 0x02,                    // USAGE (Mouse)
-    0xa1, 0x01,                    // COLLECTION (Application)
-
-    0x09, 0x01,                    //   USAGE (Pointer)
-    0xa1, 0x00,                    //   COLLECTION (Physical)
-
-    0x05, 0x09,                    //     USAGE_PAGE (Button)
-    0x19, 0x01,                    //     USAGE_MINIMUM (Button 1)
-    0x29, 0x03,                    //     USAGE_MAXIMUM (Button 3)
-    0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
-    0x25, 0x01,                    //     LOGICAL_MAXIMUM (1)
-    0x95, 0x03,                    //     REPORT_COUNT (3)
-    0x75, 0x01,                    //     REPORT_SIZE (1)
-    0x81, 0x02,                    //     INPUT (Data,Var,Abs)
-    0x95, 0x01,                    //     REPORT_COUNT (1)
-    0x75, 0x05,                    //     REPORT_SIZE (5)
-    0x81, 0x03,                    //     INPUT (Cnst,Var,Abs)
-
-    0x05, 0x01,                    //     USAGE_PAGE (Generic Desktop)
-    0x09, 0x30,                    //     USAGE (X)
-    0x09, 0x31,                    //     USAGE (Y)
-    0x09, 0x38,                    //     USAGE (Wheel)
-    0x15, 0x81,                    //     LOGICAL_MINIMUM (-127)
-    0x25, 0x7f,                    //     LOGICAL_MAXIMUM (127)
-    0x75, 0x08,                    //     REPORT_SIZE (8)
-    0x95, 0x03,                    //     REPORT_COUNT (3)
-    0x81, 0x06,                    //     INPUT (Data,Var,Rel)
-
-    0xc0,                          //   END_COLLECTION
-    0xc0                           // END_COLLECTION
+    0x05, 0x01,    // UsagePage(Generic Desktop[0x0001])
+    0x09, 0x05,    // UsageId(Gamepad[0x0005])
+    0xA1, 0x01,    // Collection(Application)
+    0x85, 0x01,    //     ReportId(1)
+    0x09, 0x01,    //     UsageId(Pointer[0x0001])
+    0xA1, 0x00,    //     Collection(Physical)
+    0x09, 0x30,    //         UsageId(X[0x0030])
+    0x09, 0x31,    //         UsageId(Y[0x0031])
+    0x15, 0xFF,    //         LogicalMinimum(-1)
+    0x25, 0x01,    //         LogicalMaximum(1)
+    0x95, 0x02,    //         ReportCount(2)
+    0x75, 0x02,    //         ReportSize(2)
+    0x81, 0x02,    //         Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
+    0xC0,          //     EndCollection()
+    0x05, 0x09,    //     UsagePage(Button[0x0009])
+    0x19, 0x01,    //     UsageIdMin(Button 1[0x0001])
+    0x29, 0x06,    //     UsageIdMax(Button 6[0x0006])
+    0x15, 0x00,    //     LogicalMinimum(0)
+    0x95, 0x06,    //     ReportCount(6)
+    0x75, 0x01,    //     ReportSize(1)
+    0x81, 0x02,    //     Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
+    0x95, 0x01,    //     ReportCount(1)
+    0x75, 0x06,    //     ReportSize(6)
+    0x81, 0x03,    //     Input(Constant, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
+    0xC0,          // EndCollection()
 };
 
 static esp_hid_raw_report_map_t bt_report_maps[] = {
