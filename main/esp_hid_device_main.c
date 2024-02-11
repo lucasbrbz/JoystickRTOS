@@ -1,13 +1,13 @@
-/* This example code is in the Public Domain (or CC0 licensed, at your option.)
-   Unless required by applicable law or agreed to in writing, this software is
-   distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
+/*
+ * Lib C
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * FreeRTOS
+ */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -29,7 +29,10 @@
 #include "esp_hidd.h"
 #include "esp_hid_gap.h"
 
-static const char *TAG = "HID_DEV_DEMO";
+/*
+ * Global variable
+ */
+static const char *TAG = "MAIN:";
 
 typedef struct
 {
@@ -429,7 +432,9 @@ static esp_hid_device_config_t bt_hid_config = {
     .report_maps_len    = 1
 };
 
-// send the buttons, change in x, and change in y
+/**
+ * Function responsible for sending the current status of buttons grouped
+*/
 void send_joystick(uint8_t buttons, char dx, char dy, char wheel)
 {
     static uint8_t buffer[4] = {0};
