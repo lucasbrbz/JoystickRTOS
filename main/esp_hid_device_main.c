@@ -32,7 +32,7 @@
 /*
  * Global variable
  */
-static const char *TAG = "MAIN:";
+static const char *TAG = "MAIN";
 
 typedef struct
 {
@@ -141,8 +141,8 @@ static esp_hid_device_config_t ble_hid_config = {
     .vendor_id          = 0x16C0,
     .product_id         = 0x05DF,
     .version            = 0x0100,
-    .device_name        = "ESP BLE Joystick",
-    .manufacturer_name  = "LucasBarboza",
+    .device_name        = "ESP BLE Gamepad",
+    .manufacturer_name  = "Lucas Barboza",
     .serial_number      = "1234567890",
     .report_maps        = ble_report_maps,
     .report_maps_len    = 2
@@ -386,38 +386,39 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
 
 #if CONFIG_BT_HID_DEVICE_ENABLED
 static local_param_t s_bt_hid_param = {0};
-const unsigned char joystickReportMap[] = {
+const unsigned char gamepadReportMap[] = {
     0x05, 0x01,    // UsagePage(Generic Desktop[0x0001])
     0x09, 0x05,    // UsageId(Gamepad[0x0005])
     0xA1, 0x01,    // Collection(Application)
-    0x85, 0x01,    //     ReportId(1)
     0x09, 0x01,    //     UsageId(Pointer[0x0001])
     0xA1, 0x00,    //     Collection(Physical)
-    0x09, 0x30,    //         UsageId(X[0x0030])
-    0x09, 0x31,    //         UsageId(Y[0x0031])
-    0x15, 0xFF,    //         LogicalMinimum(-1)
-    0x25, 0x01,    //         LogicalMaximum(1)
-    0x95, 0x02,    //         ReportCount(2)
-    0x75, 0x02,    //         ReportSize(2)
-    0x81, 0x02,    //         Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
+    0x05, 0x09,    //          UsagePage(Button[0x0009])
+    0x19, 0x01,    //          UsageIdMin(Button 1[0x0001])
+    0x29, 0x06,    //          UsageIdMax(Button 6[0x0006])
+    0x15, 0x00,    //          LogicalMinimum(0)
+    0x25, 0x01,    //          LogicalMaximum(1)
+    0x95, 0x06,    //          ReportCount(6)
+    0x75, 0x01,    //          ReportSize(1)
+    0x81, 0x02,    //          Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
+    0x95, 0x01,    //          ReportCount(1)
+    0x75, 0x02,    //          ReportSize(2)
+    0x81, 0x01,    //          Input(Cnst, Arr, Abs)
+    0x05, 0x01,    //          UsagePage(Generic Desktop[0x0001])
+    0x09, 0x30,    //          UsageId(X[0x0030])
+    0x09, 0x31,    //          UsageId(Y[0x0031])
+    0x15, 0x80,    //          LogicalMinimum(-128)
+    0x25, 0x80,    //          LogicalMaximum(127)
+    0x95, 0x02,    //          ReportCount(2)
+    0x75, 0x08,    //          ReportSize(8)
+    0x81, 0x06,    //          Input(Data, Variable, Relative, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
     0xC0,          //     EndCollection()
-    0x05, 0x09,    //     UsagePage(Button[0x0009])
-    0x19, 0x01,    //     UsageIdMin(Button 1[0x0001])
-    0x29, 0x06,    //     UsageIdMax(Button 6[0x0006])
-    0x15, 0x00,    //     LogicalMinimum(0)
-    0x95, 0x06,    //     ReportCount(6)
-    0x75, 0x01,    //     ReportSize(1)
-    0x81, 0x02,    //     Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
-    0x95, 0x01,    //     ReportCount(1)
-    0x75, 0x06,    //     ReportSize(6)
-    0x81, 0x03,    //     Input(Constant, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
     0xC0,          // EndCollection()
 };
 
 static esp_hid_raw_report_map_t bt_report_maps[] = {
     {
-        .data = joystickReportMap,
-        .len = sizeof(joystickReportMap)
+        .data = gamepadReportMap,
+        .len = sizeof(gamepadReportMap)
     },
 };
 
@@ -425,64 +426,57 @@ static esp_hid_device_config_t bt_hid_config = {
     .vendor_id          = 0x16C0,
     .product_id         = 0x05DF,
     .version            = 0x0100,
-    .device_name        = "ESP BT Joystick",
-    .manufacturer_name  = "LucasBarboza",
+    .device_name        = "ESP BT Gamepad",
+    .manufacturer_name  = "Lucas Barboza",
     .serial_number      = "1234567890",
     .report_maps        = bt_report_maps,
     .report_maps_len    = 1
 };
 
 /**
- * Function responsible for sending the current status of buttons grouped
+ * Function responsible for sending the current state of buttons
 */
-void send_joystick(uint8_t buttons, char dx, char dy, char wheel)
+void send_gamepad(uint8_t x_axis, uint8_t y_axis, uint8_t buttons)
 {
-    static uint8_t buffer[4] = {0};
-    buffer[0] = buttons;
-    buffer[1] = dx;
-    buffer[2] = dy;
-    buffer[3] = wheel;
-    esp_hidd_dev_input_set(s_bt_hid_param.hid_dev, 0, 0, buffer, 4);
+    static uint8_t buffer[3] = {0};
+
+    // Set gamepad axes values
+    buffer[0] = (int8_t)(x_axis * 255); // Scale to -128 to 127 range
+    buffer[1] = (int8_t)(y_axis * 255); // Scale to -128 to 127 range
+
+    // Set button states
+    buffer[2] = buttons;
+
+    esp_hidd_dev_input_set(s_bt_hid_param.hid_dev, 0, 0, buffer, sizeof(buffer));
 }
 
-void bt_hid_demo_task(void *pvParameters)
+void bt_hid_main_task(void *pvParameters)
 {
-    static const char* help_string = "########################################################################\n"\
-    "BT hid joystick demo usage:\n"\
-    "You can input these value to simulate joystick: 'q', 'w', 'e', 'a', 's', 'd', 'h'\n"\
-    "q -- click the left key\n"\
-    "w -- move up\n"\
-    "e -- click the right key\n"\
-    "a -- move left\n"\
-    "s -- move down\n"\
-    "d -- move right\n"\
-    "h -- show the help\n"\
-    "########################################################################\n";
+    static const char* help_string = "##########################\n"\
+    "BT HID Gamepad CONNECTED!\n"\
+    "##########################\n";
     printf("%s\n", help_string);
     char c;
     while (1) {
         c = fgetc(stdin);
         switch (c) {
         case 'q':
-            send_joystick(1, 0, 0, 0);
+            send_gamepad(1, 0, 0);
             break;
         case 'w':
-            send_joystick(0, 0, -10, 0);
+            send_gamepad(0, 0, -10);
             break;
         case 'e':
-            send_joystick(2, 0, 0, 0);
+            send_gamepad(2, 0, 0);
             break;
         case 'a':
-            send_joystick(0, -10, 0, 0);
+            send_gamepad(0, -10, 0);
             break;
         case 's':
-            send_joystick(0, 0, 10, 0);
+            send_gamepad(0, 0, 10);
             break;
         case 'd':
-            send_joystick(0, 10, 0, 0);
-            break;
-        case 'h':
-            printf("%s\n", help_string);
+            send_gamepad(0, 10, 0);
             break;
         default:
             break;
@@ -493,7 +487,7 @@ void bt_hid_demo_task(void *pvParameters)
 
 void bt_hid_task_start_up(void)
 {
-    xTaskCreate(bt_hid_demo_task, "bt_hid_demo_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, &s_bt_hid_param.task_hdl);
+    xTaskCreate(bt_hid_main_task, "bt_hid_main_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, &s_bt_hid_param.task_hdl);
     return;
 }
 
