@@ -1,4 +1,5 @@
 build/
+hid_descriptor_table.*
 sdkconfig
 sdkconfig.old
 .vscode/
