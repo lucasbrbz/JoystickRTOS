@@ -6,6 +6,11 @@
 #include <string.h>
 
 /*
+ * Drivers
+ */
+#include "driver/gpio.h"
+
+/*
  * FreeRTOS
  */
 #include "freertos/FreeRTOS.h"
@@ -30,9 +35,27 @@
 #include "esp_hid_gap.h"
 
 /*
+ * Gemeral definitions
+ */
+#define BUTTON_1            GPIO_NUM_23
+#define BUTTON_2            GPIO_NUM_22
+#define BUTTON_3            GPIO_NUM_21
+#define BUTTON_4            GPIO_NUM_19
+#define BUTTON_5            GPIO_NUM_18
+#define BUTTON_6            GPIO_NUM_5
+#define PRINT_BIN(var_name) { \
+    printf("%s = ", #var_name); \
+    for (int i = 7; i >= 0; i--) { \
+        printf("%d", (var_name >> i) & 1); \
+    } \
+    printf("\n");\
+}
+
+/*
  * Global variable
  */
 static const char *TAG = "MAIN";
+static QueueHandle_t xQueueButtons = NULL;
 
 typedef struct
 {
@@ -408,6 +431,8 @@ const unsigned char gamepadReportMap[] = {
     0x09, 0x31,    //          UsageId(Y[0x0031])
     0x15, 0x80,    //          LogicalMinimum(-128)
     0x25, 0x80,    //          LogicalMaximum(127)
+    // 0x15, 0xFF,    //          LogicalMinimum(-1)
+    // 0x25, 0x01,    //          LogicalMaximum(1)
     0x95, 0x02,    //          ReportCount(2)
     0x75, 0x08,    //          ReportSize(8)
     0x81, 0x06,    //          Input(Data, Variable, Relative, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
@@ -433,53 +458,90 @@ static esp_hid_device_config_t bt_hid_config = {
     .report_maps_len    = 1
 };
 
+void buttons_main_task(void *pvParameters)
+{
+    uint8_t lastButtonSetStatus = 0, newButtonSetStatus = 0;
+
+    while (1) {
+        uint32_t gpioReg = GPIO_REG_READ(GPIO_IN_REG);
+        int buttonIndices[] = { BUTTON_1, BUTTON_2, BUTTON_3, BUTTON_4, BUTTON_5, BUTTON_6 };
+        for (int i = 0; i < 6; i++) {
+            if (gpioReg & (1 << buttonIndices[i])) {
+                newButtonSetStatus |= (1 << i);
+            } else {
+                newButtonSetStatus &= ~(1 << i);
+            }
+        }
+        // PRINT_BIN(newButtonSetStatus);
+        if (newButtonSetStatus != lastButtonSetStatus) {
+            lastButtonSetStatus = newButtonSetStatus;
+            if (xQueueSend(xQueueButtons, (void *)&newButtonSetStatus, 0) != pdTRUE) {
+                ESP_LOGW(TAG, "Could not send newButtonSetStatus onto xQueueButtons!");
+            }
+            else {
+                ESP_LOGI(TAG, "Sent newButtonSetStatus onto xQueueButtons!");
+            }
+        }
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+}
+
+void buttons_init(void)
+{
+    gpio_config_t buttonConfig = {
+        .mode = GPIO_MODE_INPUT,
+        .intr_type = GPIO_PIN_INTR_DISABLE,
+        .pull_down_en = 1,
+        .pin_bit_mask = (1 << BUTTON_1)| \
+                        (1 << BUTTON_2)| \
+                        (1 << BUTTON_3)| \
+                        (1 << BUTTON_4)| \
+                        (1 << BUTTON_5)| \
+                        (1 << BUTTON_6)
+    };
+    ESP_ERROR_CHECK(gpio_config(&buttonConfig));
+
+    xQueueButtons = xQueueCreate(8, sizeof(uint8_t));
+
+    xTaskCreate(buttons_main_task, "buttons_main_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, NULL);
+}
+
 /**
- * Function responsible for sending the current state of buttons
+ * Function responsible for sending the current report of the gamepad
 */
-void send_gamepad(uint8_t x_axis, uint8_t y_axis, uint8_t buttons)
+void send_gamepad_report(uint8_t x_axis, uint8_t y_axis, uint8_t buttons)
 {
     static uint8_t buffer[3] = {0};
 
-    // Set gamepad axes values
-    buffer[0] = (int8_t)(x_axis * 255); // Scale to -128 to 127 range
-    buffer[1] = (int8_t)(y_axis * 255); // Scale to -128 to 127 range
-
     // Set button states
-    buffer[2] = buttons;
+    buffer[0] = buttons;
+    
+    // Set gamepad axes values
+    buffer[1] = (int8_t)(x_axis * 255); // Scale to -128 to 127 range
+    buffer[2] = (int8_t)(y_axis * 255); // Scale to -128 to 127 range
 
     esp_hidd_dev_input_set(s_bt_hid_param.hid_dev, 0, 0, buffer, sizeof(buffer));
 }
 
-void bt_hid_main_task(void *pvParameters)
+void gamepad_main_task(void *pvParameters)
 {
-    static const char* help_string = "##########################\n"\
-    "BT HID Gamepad CONNECTED!\n"\
-    "##########################\n";
-    printf("%s\n", help_string);
-    char c;
+    static const char* on_connect_string = "##############################\n"\
+                                           "#  ESP BT Gamepad CONNECTED! #\n"\
+                                           "##############################\n";
+    printf("%s\n", on_connect_string);
+
+    buttons_init();
+    uint8_t buttonSetStatus = 0;
     while (1) {
-        c = fgetc(stdin);
-        switch (c) {
-        case 'q':
-            send_gamepad(1, 0, 0);
-            break;
-        case 'w':
-            send_gamepad(0, 0, -10);
-            break;
-        case 'e':
-            send_gamepad(2, 0, 0);
-            break;
-        case 'a':
-            send_gamepad(0, -10, 0);
-            break;
-        case 's':
-            send_gamepad(0, 0, 10);
-            break;
-        case 'd':
-            send_gamepad(0, 10, 0);
-            break;
-        default:
-            break;
+        if (uxQueueMessagesWaiting(xQueueButtons)) {
+            if (xQueueReceive(xQueueButtons, &buttonSetStatus, 0) != pdTRUE) {
+                ESP_LOGW(TAG, "Could not receive buttonSetStatus from xQueueButtons!");
+            }
+            else {
+                ESP_LOGI(TAG, "Received buttonSetStatus from xQueueButtons!");
+                send_gamepad_report(0, 10, buttonSetStatus);
+            }
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
@@ -487,7 +549,7 @@ void bt_hid_main_task(void *pvParameters)
 
 void bt_hid_task_start_up(void)
 {
-    xTaskCreate(bt_hid_main_task, "bt_hid_main_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, &s_bt_hid_param.task_hdl);
+    xTaskCreate(gamepad_main_task, "gamepad_main_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, &s_bt_hid_param.task_hdl);
     return;
 }
 
