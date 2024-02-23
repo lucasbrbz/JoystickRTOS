@@ -513,7 +513,7 @@ void buttons_main_task(void *pvParameters)
                 newButtonSetStatus &= ~(1 << i);
             }
         }
-        newButtonSetStatus ^= 0x20; // invert both axes switches since they have pull-up enabled by default
+        newButtonSetStatus ^= 0x30; // invert both axes switches since they have pull-up enabled by default
         if (newButtonSetStatus != lastButtonSetStatus) {
             lastButtonSetStatus = newButtonSetStatus;
             newButtonSetStatus = (newButtonSetStatus << 16);
