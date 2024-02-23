@@ -8,6 +8,7 @@
 /*
  * Drivers
  */
+#include "driver/adc.h"
 #include "driver/gpio.h"
 
 /*
@@ -37,15 +38,18 @@
 /*
  * Gemeral definitions
  */
-#define BUTTON_1            GPIO_NUM_23
-#define BUTTON_2            GPIO_NUM_22
-#define BUTTON_3            GPIO_NUM_21
-#define BUTTON_4            GPIO_NUM_19
-#define BUTTON_5            GPIO_NUM_18
-#define BUTTON_6            GPIO_NUM_5
+#define BUTTON_1        GPIO_NUM_23
+#define BUTTON_2        GPIO_NUM_22
+#define BUTTON_3        GPIO_NUM_21
+#define BUTTON_4        GPIO_NUM_19
+#define BUTTON_5        GPIO_NUM_18
+#define BUTTON_6        GPIO_NUM_5
+#define ANALOG_STICK_X  GPIO_NUM_34
+#define ANALOG_STICK_Y  GPIO_NUM_35
+
 #define PRINT_BIN(var_name) { \
     printf("%s = ", #var_name); \
-    for (int i = 7; i >= 0; i--) { \
+    for (int i = (sizeof(var_name) * 8 - 1); i >= 0; i--) { \
         printf("%d", (var_name >> i) & 1); \
     } \
     printf("\n");\
@@ -430,12 +434,10 @@ const unsigned char gamepadReportMap[] = {
     0x09, 0x30,    //          UsageId(X[0x0030])
     0x09, 0x31,    //          UsageId(Y[0x0031])
     0x15, 0x80,    //          LogicalMinimum(-128)
-    0x25, 0x80,    //          LogicalMaximum(127)
-    // 0x15, 0xFF,    //          LogicalMinimum(-1)
-    // 0x25, 0x01,    //          LogicalMaximum(1)
+    0x25, 0x7F,    //          LogicalMaximum(127)
     0x95, 0x02,    //          ReportCount(2)
     0x75, 0x08,    //          ReportSize(8)
-    0x81, 0x06,    //          Input(Data, Variable, Relative, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
+    0x81, 0x02,    //          Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
     0xC0,          //     EndCollection()
     0xC0,          // EndCollection()
 };
@@ -458,23 +460,57 @@ static esp_hid_device_config_t bt_hid_config = {
     .report_maps_len    = 1
 };
 
-void buttons_main_task(void *pvParameters)
+void analog_stick_main_task(void *pvParameters)
 {
-    uint8_t lastButtonSetStatus = 0, newButtonSetStatus = 0;
+    uint32_t newAnalogStickPositionX = 0, newAnalogStickPositionY = 0;
+    uint32_t lastAnalogStickChecksum = 0, newAnalogStickChecksum = 0;
 
     while (1) {
-        uint32_t gpioReg = GPIO_REG_READ(GPIO_IN_REG);
+        newAnalogStickPositionX = (adc1_get_raw(ADC1_CHANNEL_6) >> 2);
+        newAnalogStickPositionY = (adc1_get_raw(ADC1_CHANNEL_7) >> 2);
+        newAnalogStickChecksum = (newAnalogStickChecksum & 0x00) | (newAnalogStickPositionX << 8) | (newAnalogStickPositionY << 0);
+
+        if (newAnalogStickChecksum < (lastAnalogStickChecksum * 0.97) || newAnalogStickChecksum > (lastAnalogStickChecksum * 1.03)) {
+            lastAnalogStickChecksum = newAnalogStickChecksum;
+            if (xQueueSend(xQueueButtons, (void *)&newAnalogStickChecksum, 0) != pdTRUE) {
+                ESP_LOGW(TAG, "Could not send newAnalogStickChecksum onto xQueueButtons!");
+            }
+            else {
+                ESP_LOGI(TAG, "Sent newAnalogStickChecksum onto xQueueButtons!");
+            }
+        }
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+}
+
+void analog_stick_init(void)
+{
+    ESP_ERROR_CHECK(adc1_config_channel_atten(ADC1_CHANNEL_6, ADC_ATTEN_DB_11));
+    ESP_ERROR_CHECK(adc1_config_channel_atten(ADC1_CHANNEL_7, ADC_ATTEN_DB_11));
+    ESP_ERROR_CHECK(adc1_config_width(ADC_WIDTH_BIT_10));
+
+    xTaskCreate(analog_stick_main_task, "analog_stick_main_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, NULL);
+}
+
+void buttons_main_task(void *pvParameters)
+{
+    uint32_t gpioReg = 0, lastButtonSetStatus = 0, newButtonSetStatus = 0;
+    
+    while (1) {
+        gpioReg = GPIO_REG_READ(GPIO_IN_REG);
         int buttonIndices[] = { BUTTON_1, BUTTON_2, BUTTON_3, BUTTON_4, BUTTON_5, BUTTON_6 };
-        for (int i = 0; i < 6; i++) {
+        newButtonSetStatus &= 0x00;
+        for (int i = 0; i < (sizeof(buttonIndices) / sizeof(buttonIndices[0])); i++) {
             if (gpioReg & (1 << buttonIndices[i])) {
                 newButtonSetStatus |= (1 << i);
             } else {
                 newButtonSetStatus &= ~(1 << i);
             }
         }
-        // PRINT_BIN(newButtonSetStatus);
         if (newButtonSetStatus != lastButtonSetStatus) {
             lastButtonSetStatus = newButtonSetStatus;
+            newButtonSetStatus = (newButtonSetStatus << 16);
             if (xQueueSend(xQueueButtons, (void *)&newButtonSetStatus, 0) != pdTRUE) {
                 ESP_LOGW(TAG, "Could not send newButtonSetStatus onto xQueueButtons!");
             }
@@ -493,16 +529,14 @@ void buttons_init(void)
         .mode = GPIO_MODE_INPUT,
         .intr_type = GPIO_PIN_INTR_DISABLE,
         .pull_down_en = 1,
-        .pin_bit_mask = (1 << BUTTON_1)| \
-                        (1 << BUTTON_2)| \
-                        (1 << BUTTON_3)| \
-                        (1 << BUTTON_4)| \
-                        (1 << BUTTON_5)| \
+        .pin_bit_mask = (1 << BUTTON_1) | \
+                        (1 << BUTTON_2) | \
+                        (1 << BUTTON_3) | \
+                        (1 << BUTTON_4) | \
+                        (1 << BUTTON_5) | \
                         (1 << BUTTON_6)
     };
     ESP_ERROR_CHECK(gpio_config(&buttonConfig));
-
-    xQueueButtons = xQueueCreate(8, sizeof(uint8_t));
 
     xTaskCreate(buttons_main_task, "buttons_main_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, NULL);
 }
@@ -510,18 +544,21 @@ void buttons_init(void)
 /**
  * Function responsible for sending the current report of the gamepad
 */
-void send_gamepad_report(uint8_t x_axis, uint8_t y_axis, uint8_t buttons)
+void send_gamepad_report(uint32_t buttonSet)
 {
     static uint8_t buffer[3] = {0};
-
     // Set button states
-    buffer[0] = buttons;
-    
+    buffer[0] = (buttonSet & 0x00FF0000) >> 16;
     // Set gamepad axes values
-    buffer[1] = (int8_t)(x_axis * 255); // Scale to -128 to 127 range
-    buffer[2] = (int8_t)(y_axis * 255); // Scale to -128 to 127 range
-
-    esp_hidd_dev_input_set(s_bt_hid_param.hid_dev, 0, 0, buffer, sizeof(buffer));
+    buffer[1] = ((((buttonSet & 0x0000FF00) >> 8) ^ 0x80) * -1) - 1;
+    buffer[2] = ((((buttonSet & 0x000000FF) >> 0) ^ 0x80) * -1) - 1;
+    
+    if (esp_hidd_dev_input_set(s_bt_hid_param.hid_dev, 0, 0, buffer, sizeof(buffer)) != ESP_OK) {
+        ESP_LOGE(TAG, "Could not send HID report!");
+    }
+    else {
+        ESP_LOGI(TAG, "Sent HID report successfully!");
+    }
 }
 
 void gamepad_main_task(void *pvParameters)
@@ -531,8 +568,11 @@ void gamepad_main_task(void *pvParameters)
                                            "##############################\n";
     printf("%s\n", on_connect_string);
 
+    xQueueButtons = xQueueCreate(10, sizeof(uint32_t));
     buttons_init();
-    uint8_t buttonSetStatus = 0;
+    analog_stick_init();
+
+    uint32_t buttonSetStatus = 0;
     while (1) {
         if (uxQueueMessagesWaiting(xQueueButtons)) {
             if (xQueueReceive(xQueueButtons, &buttonSetStatus, 0) != pdTRUE) {
@@ -540,7 +580,7 @@ void gamepad_main_task(void *pvParameters)
             }
             else {
                 ESP_LOGI(TAG, "Received buttonSetStatus from xQueueButtons!");
-                send_gamepad_report(0, 10, buttonSetStatus);
+                send_gamepad_report(buttonSetStatus);
             }
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);
