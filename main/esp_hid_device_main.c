@@ -462,15 +462,20 @@ static esp_hid_device_config_t bt_hid_config = {
 
 void analog_stick_main_task(void *pvParameters)
 {
-    uint32_t newAnalogStickPositionX = 0, newAnalogStickPositionY = 0;
+    uint32_t readX = 0, readY = 0, newAnalogStickPositionX = 0, newAnalogStickPositionY = 0;
     uint32_t lastAnalogStickChecksum = 0, newAnalogStickChecksum = 0;
 
     while (1) {
-        newAnalogStickPositionX = (adc1_get_raw(ADC1_CHANNEL_6) >> 2);
-        newAnalogStickPositionY = (adc1_get_raw(ADC1_CHANNEL_7) >> 2);
+        readX = (adc1_get_raw(ADC1_CHANNEL_6) >> 2);
+        readY = (adc1_get_raw(ADC1_CHANNEL_7) >> 2);
+
+        // add two-axis dead zone - range based on experimentation
+        newAnalogStickPositionX = (readX < 120 || readX > 134) ? readX : 127;
+        newAnalogStickPositionY = (readY < 120 || readY > 134) ? readY : 127;
+
         newAnalogStickChecksum = (newAnalogStickChecksum & 0x00) | (newAnalogStickPositionX << 8) | (newAnalogStickPositionY << 0);
 
-        if (newAnalogStickChecksum < (lastAnalogStickChecksum * 0.97) || newAnalogStickChecksum > (lastAnalogStickChecksum * 1.03)) {
+        if (newAnalogStickChecksum != lastAnalogStickChecksum) {
             lastAnalogStickChecksum = newAnalogStickChecksum;
             if (xQueueSend(xQueueButtons, (void *)&newAnalogStickChecksum, 0) != pdTRUE) {
                 ESP_LOGW(TAG, "Could not send newAnalogStickChecksum onto xQueueButtons!");
@@ -508,7 +513,7 @@ void buttons_main_task(void *pvParameters)
                 newButtonSetStatus &= ~(1 << i);
             }
         }
-        newButtonSetStatus ^= 0x30; // invert both axes switches since they have pull-up enabled by default
+        newButtonSetStatus ^= 0x20; // invert both axes switches since they have pull-up enabled by default
         if (newButtonSetStatus != lastButtonSetStatus) {
             lastButtonSetStatus = newButtonSetStatus;
             newButtonSetStatus = (newButtonSetStatus << 16);
